@@ -1,0 +1,44 @@
+# irchroma — core runnable dependencies (BAH 2026 PS-10).
+# Mirrors [project.dependencies] in pyproject.toml. Heavy/optional providers
+# (Earth Engine, TensorRT, TiTiler serving, Ultralytics) live in pyproject extras
+# ([gee], [serve], [trt], [detect]). Install those separately when needed, e.g.:
+#   pip install -e ".[gee,serve,trt]"
+#
+# NOTE: src/irchroma/config.py and src/irchroma/interfaces.py import with ONLY the
+# standard library + (optionally) torch and omegaconf — so the contract is usable
+# even before the full stack is installed.
+
+# --- deep learning ---
+torch>=2.1
+torchvision>=0.16
+einops>=0.7
+
+# --- numerics / imaging ---
+numpy>=1.24
+scipy>=1.10
+scikit-image>=0.21
+opencv-python-headless>=4.8
+colour-science>=0.4
+matplotlib>=3.7
+
+# --- geospatial IO / streaming (COG range reads, STAC, H3) ---
+rasterio>=1.3
+rioxarray>=0.15
+pystac-client>=0.7
+h3>=4.0
+
+# --- config / utils ---
+pyyaml>=6.0
+omegaconf>=2.3
+tqdm>=4.65
+
+# --- metrics (image quality) ---
+torchmetrics>=1.2
+lpips>=0.1.4
+pyiqa>=0.1.10
+clean-fid>=0.1.35
+sewar>=0.4.5
+piq>=0.8
+
+# --- semantic guidance ---
+segmentation-models-pytorch>=0.3

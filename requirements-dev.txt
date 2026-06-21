@@ -1,0 +1,9 @@
+# irchroma — development dependencies (BAH 2026 PS-10).
+# Install with:  pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=7.4
+ruff>=0.3
+black>=24.0
+mypy>=1.8
+pre-commit>=3.6

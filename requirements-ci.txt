@@ -1,0 +1,35 @@
+# irchroma — MINIMAL Continuous-Integration dependencies (BAH 2026 PS-10).
+# ===========================================================================
+# This is the *trimmed* dependency set CI installs to run the synthetic demo +
+# the core test suite on a plain ubuntu-latest runner — NOT the full
+# requirements.txt. The full set pulls heavy geospatial / serving / accelerator
+# stacks (rasterio needs system GDAL, earthengine-api needs credentials,
+# titiler/tensorrt, pyiqa/lpips/clean-fid download model weights) that would make
+# CI slow, flaky, or simply un-installable without system packages / secrets.
+#
+# Everything those heavy deps power is GUARDED in the source: the modules import
+# without them and the corresponding tests `pytest.importorskip(...)` / skip
+# gracefully, so a green CI here proves the runnable core (config + interfaces +
+# synthetic data + tiny nets + self-contained metrics + the O(1) color-LUT).
+#
+# NOTE: torch + torchvision are installed SEPARATELY in the CI workflow from the
+# CPU wheel index (https://download.pytorch.org/whl/cpu) so the runner never pulls
+# multi-GB CUDA wheels. They are intentionally omitted from this file.
+# ===========================================================================
+
+# --- numerics / imaging (self-contained metrics, synthetic data, demo) ---
+numpy>=1.24
+scipy>=1.10
+scikit-image>=0.21
+opencv-python-headless>=4.8
+
+# --- config / utils ---
+pyyaml>=6.0
+omegaconf>=2.3
+einops>=0.7
+matplotlib>=3.7
+tqdm>=4.65
+
+# --- test + lint tooling ---
+pytest>=7.4
+ruff>=0.3

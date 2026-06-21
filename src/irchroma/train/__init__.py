@@ -20,8 +20,16 @@ from typing import List
 __all__: List[str] = []
 
 try:
-    from .trainer import Trainer
+    from .trainer import Trainer, seed_everything
 
     __all__.append("Trainer")
+    __all__.append("seed_everything")
 except Exception:  # pragma: no cover - keep package import safe during parallel dev
     Trainer = None  # type: ignore
+
+    def seed_everything(seed: int = 0) -> int:  # type: ignore[misc]
+        """No-op fallback when torch is unavailable (keeps the symbol importable)."""
+        import random as _random
+
+        _random.seed(int(seed))
+        return int(seed)

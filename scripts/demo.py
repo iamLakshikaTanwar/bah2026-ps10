@@ -99,7 +99,13 @@ def run_demo(
     from irchroma.losses import build_composite_loss
     from irchroma.metrics import build_metric_suite
     from irchroma.models import build_pipeline
-    from irchroma.train import Trainer
+    from irchroma.train import Trainer, seed_everything
+
+    # Determinism: seed Python/NumPy/torch BEFORE building the pipeline so the random
+    # weight init (and optimizer/dropout/data) is reproducible across machines. This is
+    # what makes the numerically-stable training path deterministic rather than "lucky"
+    # (un-seeded init previously surfaced the now-fixed NaN-gradient bug only sometimes).
+    seed_everything(seed)
 
     if cfg is None:
         cfg = synthetic_demo_config()
@@ -204,7 +210,7 @@ def run_demo(
 
     # ---- 5) Prove training (a few real optimizer steps) ------------------- #
     print(f"\n-- training {steps} step(s) through Trainer --")
-    trainer = Trainer(cfg, pipeline=pipeline, device=str(device), max_steps=steps)
+    trainer = Trainer(cfg, pipeline=pipeline, device=str(device), max_steps=steps, seed=seed)
     train_losses = []
     t_train = time.time()
     n_done = 0

@@ -226,7 +226,8 @@ def _lab_to_rgb(lab: Tensor) -> Tensor:
     eps = 6.0 / 29.0
 
     def _f_inv(t: Tensor) -> Tensor:
-        # Inverse of the Lab nonlinearity.
+        # Inverse of the Lab nonlinearity. ``t ** 3`` is a smooth integer power (grad
+        # ``3 t**2`` finite everywhere), so no input sanitization is required here.
         return torch.where(t > eps, t ** 3, 3.0 * (eps ** 2) * (t - 4.0 / 29.0))
 
     # D65 reference white (Xn, Yn, Zn).
@@ -243,12 +244,16 @@ def _lab_to_rgb(lab: Tensor) -> Tensor:
     rgb = torch.cat([r, g, bl], dim=1)
     rgb = torch.clamp(rgb, 0.0, 1.0)
 
-    # Linear -> gamma-encoded sRGB.
+    # Linear -> gamma-encoded sRGB. NaN-gradient-safe: ``rgb ** (1/2.4)`` is computed on a
+    # strictly-positive sanitized base for EVERY element (``torch.where`` differentiates
+    # both branches; the unselected fractional power must not see 0 -> grad inf -> NaN).
     a_thr = 0.0031308
+    _pow_eps = 1e-12
+    rgb_safe = torch.clamp(rgb, min=_pow_eps)
     rgb = torch.where(
         rgb <= a_thr,
         12.92 * rgb,
-        1.055 * torch.clamp(rgb, min=1e-8) ** (1.0 / 2.4) - 0.055,
+        1.055 * rgb_safe ** (1.0 / 2.4) - 0.055,
     )
     return torch.clamp(rgb, 0.0, 1.0)
 

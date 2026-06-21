@@ -103,25 +103,56 @@ _LAB_EPS = 216.0 / 24389.0  # (6/29)^3 ~ 0.008856
 _LAB_KAPPA = 24389.0 / 27.0  # (29/3)^3 ~ 903.3
 
 
+# Small floor used to keep the *input* to every fractional power strictly positive so
+# the power AND its gradient stay finite for every element (the "safe-input double-where"
+# trick): ``torch.where`` differentiates BOTH branches for ALL elements, so the unselected
+# branch's power must never see 0/negative inputs (whose grad is inf/NaN -> 0*inf = NaN).
+_POW_EPS = 1e-12
+
+
 def _srgb_to_linear(c: "Tensor") -> "Tensor":
-    """Inverse sRGB gamma (companding). ``c`` in [0,1] -> linear in [0,1]."""
+    """Inverse sRGB gamma (companding). ``c`` in [0,1] -> linear in [0,1].
+
+    NaN-gradient-safe: the ``** 2.4`` branch is evaluated on a strictly-positive
+    sanitized input for *every* element (not just where it is selected) so its gradient
+    is finite everywhere before ``torch.where`` selects it.
+    """
     c = c.clamp(0.0, 1.0)
-    return torch.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    base = ((c + 0.055) / 1.055).clamp_min(_POW_EPS)
+    return torch.where(c <= 0.04045, c / 12.92, base ** 2.4)
 
 
 def _linear_to_srgb(c: "Tensor") -> "Tensor":
-    """Forward sRGB gamma. linear -> companded sRGB in [0,1]."""
+    """Forward sRGB gamma. linear -> companded sRGB in [0,1].
+
+    NaN-gradient-safe: ``c ** (1/2.4)`` is computed on ``c.clamp_min(eps)`` so both the
+    value and its gradient ``(1/2.4) * c**(1/2.4 - 1)`` are finite for *every* element
+    (the raw ``c`` can be <= 0 for out-of-gamut colors, whose fractional power grad is
+    inf/NaN -> ``0 * inf = NaN`` inside ``torch.where``). The original bug
+    (``PowBackward0 returned nan``) lived here.
+    """
     c = c.clamp(0.0, 1.0)
-    return torch.where(c <= 0.0031308, c * 12.92, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
+    c_safe = c.clamp_min(_POW_EPS)
+    return torch.where(c <= 0.0031308, c * 12.92, 1.055 * (c_safe ** (1.0 / 2.4)) - 0.055)
 
 
 def _lab_f(t: "Tensor") -> "Tensor":
-    """Lab forward nonlinearity ``f(t)`` (cube-root with linear toe)."""
-    return torch.where(t > _LAB_EPS, t.clamp_min(0.0) ** (1.0 / 3.0), (_LAB_KAPPA * t + 16.0) / 116.0)
+    """Lab forward nonlinearity ``f(t)`` (cube-root with linear toe).
+
+    NaN-gradient-safe: the cube-root branch sees a strictly-positive sanitized input for
+    every element (``t ** (1/3)`` has grad ``(1/3) t**(-2/3)`` -> inf at 0, and is NaN for
+    t<0). Clamping the *input* (not the result) keeps the gradient finite everywhere.
+    """
+    t_safe = t.clamp_min(_POW_EPS)
+    return torch.where(t > _LAB_EPS, t_safe ** (1.0 / 3.0), (_LAB_KAPPA * t + 16.0) / 116.0)
 
 
 def _lab_f_inv(t: "Tensor") -> "Tensor":
-    """Inverse Lab nonlinearity."""
+    """Inverse Lab nonlinearity.
+
+    ``t ** 3`` is a smooth integer power (grad ``3 t**2`` finite everywhere), so no input
+    sanitization is needed; we keep the ``torch.where`` for the linear toe.
+    """
     t3 = t ** 3
     return torch.where(t3 > _LAB_EPS, t3, (116.0 * t - 16.0) / _LAB_KAPPA)
 

@@ -35,7 +35,9 @@ AMP/fp16 + grad-scaler are used only when the device is CUDA and the config asks
 from __future__ import annotations
 
 import os
+import random
 import time
+import warnings
 from typing import Any, Dict, List, Optional
 
 from ..config import Config, TrainConfig
@@ -58,7 +60,7 @@ except Exception:  # pragma: no cover
     _tqdm = None  # type: ignore
 
 
-__all__ = ["Trainer"]
+__all__ = ["Trainer", "seed_everything"]
 
 
 def _maybe_tqdm(iterable: Any, total: Optional[int], desc: str, enabled: bool) -> Any:
@@ -66,6 +68,29 @@ def _maybe_tqdm(iterable: Any, total: Optional[int], desc: str, enabled: bool) -
     if enabled and _tqdm is not None:
         return _tqdm(iterable, total=total, desc=desc, leave=False)
     return iterable
+
+
+def seed_everything(seed: int = 0) -> int:
+    """Seed Python, NumPy and torch RNGs for reproducible training/inference.
+
+    Seeds ``random``, ``numpy`` (best-effort) and ``torch`` (CPU + CUDA), so behavior is
+    reproducible across machines — important for the numerically-stable demo/CI path
+    where un-seeded random *weight init* otherwise made the (now-fixed) NaN-gradient bug
+    appear only intermittently. Returns the seed used.
+    """
+    seed = int(seed)
+    random.seed(seed)
+    try:  # numpy is a hard dep of the project, but stay defensive.
+        import numpy as _np
+
+        _np.random.seed(seed % (2**32 - 1))
+    except Exception:  # pragma: no cover - numpy always present in practice
+        pass
+    if TORCH_AVAILABLE:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():  # pragma: no cover - CPU-only CI
+            torch.cuda.manual_seed_all(seed)
+    return seed
 
 
 class Trainer:
@@ -96,12 +121,19 @@ class Trainer:
         device: Optional[str] = None,
         two_stage: Optional[bool] = None,
         max_steps: Optional[int] = None,
+        seed: Optional[int] = None,
     ) -> None:
         if not TORCH_AVAILABLE:  # pragma: no cover
             raise RuntimeError("Trainer requires torch. Install torch to train.")
 
         self.config = config
         self.train_cfg: TrainConfig = config.train
+        # Seed RNGs up-front for reproducible training (weight init when we build the
+        # pipeline below, optimizer noise, dropout, data shuffling). Falls back to the
+        # config's train.seed. This makes the (now-fixed) numerics reproducible too.
+        self.seed = seed_everything(
+            seed if seed is not None else int(getattr(self.train_cfg, "seed", 0))
+        )
         self.device = torch.device(device or self.train_cfg.device or "cpu")
 
         # ---- Build / adopt the pipeline + discriminator -------------------- #
@@ -178,6 +210,20 @@ class Trainer:
                 continue
             params.append(p)
         return params
+
+    @staticmethod
+    def _grads_finite(params: Any) -> bool:
+        """Return ``True`` iff every parameter gradient is finite (no NaN/inf).
+
+        Used as a last-line guard before ``optimizer.step()`` so a non-finite gradient
+        can never be written into the weights. ``params`` may be any iterable of tensors
+        (it is consumed once).
+        """
+        for p in params:
+            g = getattr(p, "grad", None)
+            if g is not None and not bool(torch.isfinite(g).all()):
+                return False
+        return True
 
     # ------------------------------------------------------------------ #
     # Schedules.
@@ -327,11 +373,27 @@ class Trainer:
             fake_out_d = self.discriminator(fake_in)
             real_out_d = self.discriminator(real_in)
             loss_d = self._d_loss(real_out_d, fake_out_d)
-            if getattr(loss_d, "requires_grad", False):
+            # Defense-in-depth: only backward/step on a FINITE discriminator loss; a
+            # non-finite loss would otherwise poison the D weights (and then everything).
+            if getattr(loss_d, "requires_grad", False) and bool(torch.isfinite(loss_d)):
                 loss_d.backward()
+                # Clip BEFORE the optimizer step so exploding grads can't reach the params.
                 if self.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), self.grad_clip)
-                self.opt_d.step()
+                if self._grads_finite(self.discriminator.parameters()):
+                    self.opt_d.step()
+                else:  # pragma: no cover - defensive; conversions are now NaN-grad-safe
+                    warnings.warn(
+                        "Trainer: skipped D optimizer step (non-finite gradients).",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+            elif not bool(torch.isfinite(loss_d)):  # pragma: no cover - defensive guard
+                warnings.warn(
+                    "Trainer: skipped D update (non-finite discriminator loss).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             loss_d_val = float(loss_d.detach().item())
         logs["loss_d"] = loss_d_val
 
@@ -353,12 +415,31 @@ class Trainer:
         total, components = self.criterion(output, target, ctx)
         # Guard the (rare) degenerate case where every active term detached to a constant
         # (e.g. an all-zero-weight config): backward() on a grad-less scalar would raise.
-        if getattr(total, "requires_grad", False):
+        # Defense-in-depth: only backward/step on a FINITE generator loss, and skip the
+        # step if any gradient is non-finite — so a single bad batch can never write
+        # NaN/inf into the weights (which is what turned step-1 into an all-NaN step-2).
+        if getattr(total, "requires_grad", False) and bool(torch.isfinite(total)):
             total.backward()
+            # Clip BEFORE the optimizer step (both G and D) to bound any grad spike.
             if self.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(self._generator_parameters(), self.grad_clip)
-            self.opt_g.step()
-            self._step_schedulers()
+            if self._grads_finite(self._generator_parameters()):
+                self.opt_g.step()
+                self._step_schedulers()
+            else:  # pragma: no cover - defensive; conversions are now NaN-grad-safe
+                self.opt_g.zero_grad(set_to_none=True)
+                warnings.warn(
+                    "Trainer: skipped G optimizer step (non-finite gradients).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+        elif not bool(torch.isfinite(total)):  # pragma: no cover - defensive guard
+            self.opt_g.zero_grad(set_to_none=True)
+            warnings.warn(
+                "Trainer: skipped G update (non-finite generator loss).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         logs["loss_total"] = float(total.detach().item())
         for k, v in components.items():

@@ -66,24 +66,42 @@ _RGB2XYZ: Tuple[Tuple[float, float, float], ...] = (
 _WHITE_D65: Tuple[float, float, float] = (0.95047, 1.0, 1.08883)
 
 
+# Strictly-positive floor for the *input* of every fractional power, so the power and
+# its gradient are finite for ALL elements before selection. ``torch.where`` (and the
+# ``mask*a + (1-mask)*b`` blend) differentiate BOTH branches for every element, so the
+# unselected branch's power must never see 0/negative inputs (grad inf/NaN -> NaN).
+_POW_EPS = 1e-12
+
+
 def _srgb_to_linear(c: Tensor) -> Tensor:
-    """Inverse-companding sRGB -> linear-RGB (differentiable, branch-free)."""
+    """Inverse-companding sRGB -> linear-RGB (differentiable, NaN-gradient-safe).
+
+    Uses the safe-input ``torch.where`` trick: the ``** 2.4`` branch is evaluated on a
+    strictly-positive sanitized base for every element so its gradient is finite, then
+    selected against the linear segment (the old ``mask*a + (1-mask)*b`` blend evaluated
+    the power's gradient at unsafe inputs for the unselected pixels).
+    """
     c = c.clamp(0.0, 1.0)
-    # Smooth threshold blend avoids the hard branch while staying ~exact.
     low = c / 12.92
-    high = ((c + 0.055) / 1.055).clamp(min=0.0) ** 2.4
-    mask = (c > 0.04045).to(c.dtype)
-    return mask * high + (1.0 - mask) * low
+    base = ((c + 0.055) / 1.055).clamp(min=_POW_EPS)
+    high = base ** 2.4
+    return torch.where(c > 0.04045, high, low)  # type: ignore[union-attr]
 
 
 def _lab_f(t: Tensor) -> Tensor:
-    """The CIE-Lab nonlinearity ``f(t)`` (with the linear segment near 0)."""
+    """The CIE-Lab nonlinearity ``f(t)`` (with the linear segment near 0).
+
+    NaN-gradient-safe: the cube-root branch sees a strictly-positive sanitized input for
+    every element. ``x ** (1/3)`` has gradient ``(1/3) x**(-2/3)`` which is inf at 0 and
+    NaN for x<0; clamping the *input* (not the result) keeps the gradient finite
+    everywhere, and ``torch.where`` then selects the correct branch per element.
+    """
     delta = 6.0 / 29.0
     delta3 = delta ** 3
-    mask = (t > delta3).to(t.dtype)
-    cube_root = t.clamp(min=1e-8) ** (1.0 / 3.0)
+    t_safe = t.clamp(min=_POW_EPS)
+    cube_root = t_safe ** (1.0 / 3.0)
     linear = t / (3.0 * delta * delta) + 4.0 / 29.0
-    return mask * cube_root + (1.0 - mask) * linear
+    return torch.where(t > delta3, cube_root, linear)  # type: ignore[union-attr]
 
 
 def rgb_to_lab(rgb: Tensor) -> Tensor:

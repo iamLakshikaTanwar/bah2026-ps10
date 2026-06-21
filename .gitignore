@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ---------------------------------------------------------------------------
+# Virtual environments
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---------------------------------------------------------------------------
+# Testing / linting / typing caches
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ---------------------------------------------------------------------------
+# Notebooks
+# ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Data, imagery & geospatial artifacts (never commit raw EO data)
+# data/ and checkpoints/ are created at runtime by the data/train modules.
+# ---------------------------------------------------------------------------
+data/
+*.tif
+*.tiff
+*.TIF
+*.jp2
+*.hdf
+*.he5
+*.nc
+*.netcdf
+*.zarr/
+*.safe/
+*.SAFE/
+*.mbtiles
+*.npy
+*.npz
+
+# ---------------------------------------------------------------------------
+# Model checkpoints, exports & logs
+# ---------------------------------------------------------------------------
+checkpoints/
+logs/
+results/
+runs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.plan
+*.trt
+
+# ---------------------------------------------------------------------------
+# Credentials / secrets (Earth Engine, cloud)
+# ---------------------------------------------------------------------------
+*.json.key
+.ee_credentials
+.env
+.env.*
+!.env.example
+service-account*.json
+secrets/
+
+# ---------------------------------------------------------------------------
+# OS / editor cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

@@ -1,0 +1,281 @@
+# irchroma — default configuration (BAH 2026 PS-10)
+# ---------------------------------------------------------------------------
+# This file MIRRORS the dataclass defaults in src/irchroma/config.py and is what
+# `Config.from_yaml("configs/default.yaml")` loads. It was generated from
+# `Config().to_yaml(...)` so it stays in sync with the code contract.
+# Regenerate after changing config.py:  `make config-dump`  (see Makefile).
+# Units/ranges are documented inline in src/irchroma/config.py.
+# ---------------------------------------------------------------------------
+name: irchroma_default
+seed: 1337
+data:
+  primary_source: landsat_oli_tirs
+  aux_sources:
+  - sentinel2_msi
+  - aster
+  - worldstrat
+  - emit
+  - modis
+  - viirs
+  - insat_3d
+  - resourcesat_liss4
+  source_ids:
+    landsat_oli_tirs: LANDSAT/LC08/C02/T1_L2
+    landsat_toa: LANDSAT/LC08/C02/T1_TOA
+    sentinel2_msi: COPERNICUS/S2_SR_HARMONIZED
+    aster: ASTER/AST_L1T_003
+    modis_sr: MODIS/061/MOD09GA
+    modis_lst: MODIS/061/MOD11A1
+    viirs_sr: NOAA/VIIRS/001/VNP09GA
+    esa_worldcover: ESA/WorldCover/v200
+    dynamic_world: GOOGLE/DYNAMICWORLD/V1
+    jrc_water: JRC/GSW1_4/GlobalSurfaceWater
+  access_backends:
+  - stac_cog
+  - planetary_computer
+  - aws_open_data
+  - gee
+  ir_bands:
+  - ST_B10
+  rgb_bands:
+  - SR_B4
+  - SR_B3
+  - SR_B2
+  guide_band: SR_B8_PAN
+  c_ir: 1
+  c_guide: 1
+  target_crs: EPSG:32643
+  target_resolution_m: 10.0
+  coregister_method: reproject_match
+  use_arosics_subpixel: true
+  max_coreg_shift_px: 2.0
+  cloud_mask: true
+  composite_window_days: 21
+  max_ndvi_delta: 0.2
+  tile_size: 512
+  tile_overlap: 32
+  ir_patch_size: 128
+  scale_factor: 4
+  ir_norm: percentile
+  ir_percentile_lo: 2.0
+  ir_percentile_hi: 98.0
+  use_clahe: true
+  clahe_clip_limit: 2.0
+  clahe_grid: 8
+  rgb_norm: unit
+  lulc_sources:
+  - esa_worldcover
+  - dynamic_world
+  - jrc_water
+  lulc_majority_vote: true
+  use_dynamic_world_uncertainty: true
+  num_classes: 10
+  split_strategy: geographic_holdout
+  split_unit: wrs2_path_row
+  train_frac: 0.7
+  val_frac: 0.15
+  test_frac: 0.15
+  holdout_biomes:
+  - forest
+  - water
+  - urban
+  - desert
+  - snow
+  seed: 1337
+  data_root: data
+  cache_dir: data/cache
+  cog_cache: true
+  num_workers: 8
+  pin_memory: true
+  use_synthetic: false
+  synthetic_num_samples: 256
+model:
+  c_ir: 1
+  c_guide: 1
+  c_rgb: 3
+  scale: 4
+  num_classes: 10
+  two_stage: true
+  share_encoder: true
+  feature_feedback: true
+  sr:
+    backbone: nafnet
+    scale: 4
+    in_channels: 1
+    out_channels: 1
+    width: 64
+    enc_blocks:
+    - 2
+    - 2
+    - 4
+    - 8
+    middle_blocks: 12
+    dec_blocks:
+    - 2
+    - 2
+    - 2
+    - 2
+    upsampler: pixelshuffle
+    channel_attention: true
+    use_fft_block: true
+    use_guide: true
+    guide_channels: 1
+    guide_fusion: cross_attention
+    degradation: realesrgan
+    use_sensor_mtf: true
+    add_striping: true
+    noise_model: poisson_gaussian
+    l1bsr_selfsup: false
+    misr_frames: 1
+  colorization:
+    generator: pix2pixhd_ddcolor
+    in_channels: 1
+    out_channels: 3
+    ngf: 64
+    n_downsample_global: 4
+    n_blocks_global: 9
+    n_local_enhancers: 1
+    use_color_decoder: true
+    num_color_queries: 100
+    color_decoder_layers: 3
+    encoder: convnext_tiny
+    use_spade: true
+    spade_label_nc: 10
+    condition_on_palette: true
+    output_space: lab
+    color_space_clamp: true
+    disc_type: multiscale_patchgan
+    num_discriminators: 3
+    disc_n_layers: 3
+    disc_ndf: 64
+    spectral_norm: true
+    gan_mode: hinge
+    bbdm_latent: vqgan
+    bbdm_timesteps: 1000
+    bbdm_sample_steps: 50
+  semantic:
+    guidance_model: segformer_b3
+    guidance_pretrained: true
+    num_classes: 10
+    checker_model: segformer_b2
+    checker_frozen: true
+    lut_color_space: lab
+    lut_clamp_sigma: 2.0
+    lut_clamp_chroma_only: true
+    lut_hard_prior_sigma: 1.0
+    water_override_occurrence: 80.0
+    use_learned_3dlut: true
+    lut3d_dim: 33
+    lut3d_n_basis: 3
+    lut3d_adaint: true
+    uncertainty_source: dynamic_world
+    uncertainty_threshold: 0.5
+    desaturate_uncertain: true
+loss:
+  sr_charbonnier: 1.0
+  sr_gradient: 0.1
+  sr_fft: 0.1
+  sr_lpips: 0.05
+  sr_adversarial: 0.0
+  sr_contextual: 0.0
+  charbonnier_eps: 0.001
+  color_l1: 10.0
+  color_ms_ssim: 5.0
+  color_edge: 2.0
+  color_lpips: 1.0
+  color_feature_matching: 10.0
+  color_adversarial: 1.0
+  color_lab_chroma: 2.0
+  color_histogram: 0.5
+  color_colorfulness: 0.3
+  color_sam: 0.5
+  color_tv: 0.0001
+  seg_consistency: 1.0
+  color_lut_outofclass: 1.0
+  task_perceptual: 0.5
+  cycle_consistency: 0.0
+  uncertainty_weight: 0.1
+  gan_mode: hinge
+  r1_gamma: 0.0
+train:
+  stage: joint
+  epochs: 200
+  batch_size: 16
+  accumulate_grad_batches: 1
+  optimizer: adamw
+  lr_generator: 0.0002
+  lr_discriminator: 0.0002
+  betas:
+  - 0.9
+  - 0.999
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_steps: 1000
+  min_lr: 1.0e-06
+  grad_clip: 1.0
+  ema_decay: 0.999
+  precision: amp_fp16
+  compile_model: false
+  channels_last: true
+  sr_pretrain_epochs: 50
+  freeze_sr_after_pretrain: false
+  d_steps_per_g: 1
+  output_dir: checkpoints
+  log_dir: logs
+  log_every: 50
+  val_every: 1
+  save_every: 10
+  keep_last_n: 5
+  resume: null
+  device: cuda
+  seed: 1337
+infer:
+  tile_size: 512
+  tile_overlap: 32
+  blend_window: raised_cosine
+  batch_tiles: 8
+  runtime: torch
+  precision: fp16
+  use_cuda_streams: true
+  int8_calibration: null
+  export_path: checkpoints/irchroma.onnx
+  enable_cache: true
+  cache_backend: redis
+  cache_key: quadkey
+  h3_resolution: 9
+  write_back: true
+  apply_learned_3dlut: true
+  apply_class_lut_clamp: true
+  emit_uncertainty: true
+  device: cuda
+eval:
+  families:
+  - fidelity
+  - perceptual
+  - no_reference
+  - color
+  - faithfulness
+  - downstream
+  - efficiency
+  y_channel_metrics: true
+  border_shave: 4
+  fid_mode: clean
+  use_clip_fid: true
+  use_kid: true
+  fid_reference_stats: landsat_rgb
+  seg_consistency_min: 0.7
+  detection_count_delta_max: 0.1
+  edge_correlation_min: 0.8
+  downstream_detector: yolov11_obb
+  downstream_segmenter: segformer
+  bootstrap_resamples: 1000
+  significance_test: wilcoxon
+  conditions:
+  - raw_ir
+  - bicubic_baseline
+  - ours
+  warmup_iters: 50
+  timing_iters: 100
+  report_fp16: true
+  measure_energy: false
+  results_dir: results

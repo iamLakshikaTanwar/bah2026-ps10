@@ -25,10 +25,13 @@ opencv-python-headless>=4.8
 
 # --- config / utils ---
 pyyaml>=6.0
-omegaconf>=2.3
 einops>=0.7
 matplotlib>=3.7
 tqdm>=4.65
+# NOTE: omegaconf is OPTIONAL — irchroma.config guards it and falls back to PyYAML
+# (validated locally with omegaconf absent: configs/default.yaml round-trips fine).
+# It is installed best-effort in a separate CI step because its antlr4 build can fail
+# on some runners; a failure there must never red the build.
 
 # --- test + lint tooling ---
 pytest>=7.4

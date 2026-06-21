@@ -79,6 +79,8 @@ logs/
 results/
 runs/
 wandb/
+# Runtime demo / inference outputs (the committed demo proof lives in assets/).
+outputs/
 *.pt
 *.pth
 *.ckpt

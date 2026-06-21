@@ -499,12 +499,20 @@ class ColorizationGenerator(BaseModel):
         # ---- Bottleneck (SPADE-conditioned or plain residual blocks) ------- #
         # SemanticBuilder's SPADEResBlock.forward(features, semantic) expects the RAW
         # Long label map [B, H, W] (it one-hots + resizes to the feature size itself),
-        # NOT our one-hot. Pass `sem_idx`; fall back to plain blocks if absent.
-        use_spade_now = self.spade_active and sem_idx is not None
-        for block in self.blocks:
-            if use_spade_now:
-                feats = block(feats, sem_idx)
-            else:
+        # NOT our one-hot. The bottleneck blocks were *built* as SPADE blocks (they need
+        # the semantic argument), so when no semantic map is supplied at inference we feed
+        # a neutral all-zero (class-0) label map: SPADE then applies a single,
+        # spatially-uniform learned affine (the parameter-free-norm + a constant gamma/beta)
+        # instead of crashing — the graceful "no label" degradation the contract requires.
+        # Plain :class:`ResnetBlock` s (SPADE unavailable) take features only.
+        if self.spade_active:
+            seg_for_blocks = sem_idx
+            if seg_for_blocks is None:
+                seg_for_blocks = ir.new_zeros((b, h, w), dtype=torch.long)
+            for block in self.blocks:
+                feats = block(feats, seg_for_blocks)
+        else:
+            for block in self.blocks:
                 feats = block(feats)
 
         # ---- Decoder (pixel decoder) --------------------------------------- #

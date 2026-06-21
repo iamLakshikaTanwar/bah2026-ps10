@@ -100,7 +100,10 @@ class _ConstTerm(LossTerm):
     """
 
     def __init__(self, value: float) -> None:
-        # Avoid nn.Module.__init__ (it's a stub without torch); set attrs directly.
+        # Initialize the (real nn.Module when torch is present, else a no-op stub) base
+        # so CompositeLoss can register this term in its nn.ModuleDict and invoke it via
+        # nn.Module.__call__ — both require nn.Module's internal state to exist.
+        super().__init__()
         self.value = float(value)
         self.name = "const"
 

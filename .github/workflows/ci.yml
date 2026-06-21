@@ -1,0 +1,94 @@
+name: CI
+
+# Green-able CI for the irchroma core: install a CPU-only torch + the MINIMAL
+# requirements-ci.txt (NOT the full requirements.txt, which needs system GDAL /
+# Earth Engine creds / TensorRT), then lint critical errors, run the test suite,
+# and execute the synthetic end-to-end demo on CPU. Heavy/optional deps are guarded
+# in the source and their tests `pytest.importorskip(...)`, so a missing optional
+# backend never fails this job.
+
+on:
+  push:
+    branches:
+      - main
+      - "wave-*"
+      - "build/**"
+      - "feat/**"
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint + test + demo (CPU)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # CPU-only torch/torchvision from the dedicated wheel index so the runner
+      # never pulls multi-GB CUDA wheels. --index-url is used ONLY for this line.
+      - name: Install CPU PyTorch
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install minimal CI dependencies
+        run: pip install -r requirements-ci.txt
+
+      # omegaconf is OPTIONAL (irchroma.config falls back to PyYAML when it is
+      # absent — validated locally). Its antlr4 dependency can fail to build on some
+      # runners, so install it best-effort: a failure here must NOT red the build.
+      - name: Install omegaconf (optional, best-effort)
+        continue-on-error: true
+        run: pip install "omegaconf>=2.3"
+
+      # Editable install of the src-layout package. The pyproject declares
+      # package-dir = {"" = "src"}, so `pip install -e .` exposes `irchroma`.
+      # If the editable install is ever problematic, the steps below also export
+      # PYTHONPATH=src as a belt-and-braces fallback.
+      - name: Install irchroma (editable, no deps)
+        run: pip install -e . --no-deps
+
+      # Critical-error lint ONLY (syntax errors / undefined names / f-string &
+      # comparison bugs). Style (E501 etc.) is intentionally NOT enforced here so
+      # formatting never reds the build.
+      - name: Ruff (critical errors only)
+        run: ruff check --select=E9,F63,F7,F82 src tests scripts
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      # End-to-end synthetic smoke test on CPU. Prefer scripts/demo.py if present;
+      # otherwise fall back to the canonical demo entrypoint documented in the
+      # Makefile (`python -m irchroma.train.cli --demo`). Either must succeed on CPU.
+      - name: End-to-end synthetic demo (CPU)
+        env:
+          PYTHONPATH: src
+        run: |
+          if [ -f scripts/demo.py ]; then
+            echo "Running scripts/demo.py"
+            python scripts/demo.py
+          else
+            echo "scripts/demo.py not found; running the Makefile demo entrypoint"
+            python -m irchroma.train.cli --demo --config configs/default.yaml
+          fi

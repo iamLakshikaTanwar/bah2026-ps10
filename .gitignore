@@ -55,7 +55,7 @@ coverage.xml
 # Data, imagery & geospatial artifacts (never commit raw EO data)
 # data/ and checkpoints/ are created at runtime by the data/train modules.
 # ---------------------------------------------------------------------------
-data/
+/data/
 *.tif
 *.tiff
 *.TIF
